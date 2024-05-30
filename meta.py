@@ -46,7 +46,7 @@ def get_meta_data(url):
     except requests.exceptions.RequestException as e:
         return None, None, 0, 0, None, None, str(e)
 
-st.title('Website Meta Data Extractor')
+st.title('Website Meta Data Extractor | Digital Marketing Experiment')
 
 # Input URL from the user
 url = st.text_input('Enter the URL of the website:')
