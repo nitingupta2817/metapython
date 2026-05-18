@@ -8,7 +8,7 @@ st.set_page_config(
     page_title="MetaScan · SEO Inspector",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="expanded",  # ← change this
+    initial_sidebar_state="expanded",
 )
 
 THEMES = {
@@ -62,12 +62,10 @@ THEMES = {
     },
 }
 
-# ── Theme selector ────────────────────────────────────────────────────────────
 st.sidebar.title("🎨 Theme")
 selected_theme = st.sidebar.radio("Choose Theme", list(THEMES.keys()), index=0)
 t = THEMES[selected_theme]
 
-# ── Dynamic CSS ───────────────────────────────────────────────────────────────
 st.markdown(
     f"""
     <style>
@@ -272,6 +270,10 @@ st.markdown(
         color: {t['text']} !important;
         font-family: 'IBM Plex Mono', monospace !important;
         font-size: 0.8rem !important;
+    }}
+    [data-testid="stSidebar"] p {{
+        color: {t['text']} !important;
+        font-family: 'IBM Plex Mono', monospace !important;
     }}
     </style>
     """,
