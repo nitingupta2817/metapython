@@ -412,40 +412,10 @@ with col_tip:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def get_meta_data(url):
     try:
-        session = requests.Session()
-
-        # Full browser-like headers to bypass most 403 / WAF blocks
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Accept": (
-                "text/html,application/xhtml+xml,application/xml;"
-                "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,"
-                "application/signed-exchange;v=b3;q=0.7"
-            ),
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Cache-Control": "max-age=0",
-            "DNT": "1",
-        }
-
-        response = session.get(
+        response = requests.get(
             url.strip(),
-            timeout=15,
-            headers=headers,
-            allow_redirects=True,
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"},
         )
         response.raise_for_status()
         soup = BeautifulSoup(response.content, "lxml")
@@ -463,20 +433,6 @@ def get_meta_data(url):
         h2_texts = [t.get_text(strip=True) for t in soup.find_all("h2")] or ["No H2 tags found"]
 
         return title, title_len, description, desc_len, h1_texts, h2_texts, None
-
-    except requests.exceptions.HTTPError as e:
-        status = e.response.status_code if e.response is not None else "?"
-        if status == 403:
-            return None, None, None, None, None, None, (
-                f"403 Forbidden — the server blocked the request. "
-                f"The site may use a JS challenge (Cloudflare). "
-                f"Try installing 'cloudscraper' for those sites."
-            )
-        return None, None, None, None, None, None, str(e)
-    except requests.exceptions.ConnectionError:
-        return None, None, None, None, None, None, "Connection error — check the URL or your network."
-    except requests.exceptions.Timeout:
-        return None, None, None, None, None, None, "Request timed out after 15 seconds."
     except requests.exceptions.RequestException as e:
         return None, None, None, None, None, None, str(e)
 
