@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import html as html_lib
 
-# ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="MetaScan · SEO Inspector",
     page_icon="🔍",
@@ -12,366 +11,268 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── Global CSS ────────────────────────────────────────────────────────────────
+THEMES = {
+    "🌙 Dark": {
+        "bg":         "#0a0b0e",
+        "bg2":        "#0d0f16",
+        "bg3":        "#0f1117",
+        "bg4":        "#111420",
+        "border":     "#1e2130",
+        "border2":    "#252a3d",
+        "border3":    "#1a1d27",
+        "text":       "#c9cdd6",
+        "text2":      "#94a3b8",
+        "text3":      "#555c72",
+        "text4":      "#404655",
+        "text5":      "#4a5270",
+        "accent":     "#3b82f6",
+        "accent2":    "#2563eb",
+        "accent_glow":"#3b82f680",
+        "accent_soft":"#3b82f620",
+        "accent_bg":  "#3b82f610",
+        "accent_dim": "#3b82f660",
+        "h1_color":   "#bfdbfe",
+        "h2_color":   "#c7d2fe",
+        "title_color":"#f0f2f7",
+        "num_color2": "#3d4560",
+    },
+    "☀️ Light": {
+        "bg":         "#f0f4f8",
+        "bg2":        "#ffffff",
+        "bg3":        "#f8fafc",
+        "bg4":        "#eef2f6",
+        "border":     "#dde3ea",
+        "border2":    "#c8d0da",
+        "border3":    "#e4e9ef",
+        "text":       "#2d3748",
+        "text2":      "#4a5568",
+        "text3":      "#718096",
+        "text4":      "#a0aec0",
+        "text5":      "#8896a8",
+        "accent":     "#3b82f6",
+        "accent2":    "#2563eb",
+        "accent_glow":"#3b82f640",
+        "accent_soft":"#3b82f615",
+        "accent_bg":  "#3b82f608",
+        "accent_dim": "#3b82f650",
+        "h1_color":   "#1e40af",
+        "h2_color":   "#3730a3",
+        "title_color":"#1a202c",
+        "num_color2": "#b0bec5",
+    },
+}
+
+# ── Theme selector ────────────────────────────────────────────────────────────
+st.sidebar.title("🎨 Theme")
+selected_theme = st.sidebar.radio("Choose Theme", list(THEMES.keys()), index=0)
+t = THEMES[selected_theme]
+
+# ── Dynamic CSS ───────────────────────────────────────────────────────────────
 st.markdown(
-    """
+    f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap');
 
-    /* ── Base ── */
-    html, body, [class*="css"] {
+    html, body, [class*="css"] {{
         font-family: 'IBM Plex Mono', monospace;
-        background-color: #0a0b0e;
-        color: #c9cdd6;
-    }
+        background-color: {t['bg']};
+        color: {t['text']};
+    }}
+    .stApp {{ background: {t['bg']}; }}
+    #MainMenu, footer, header {{ visibility: hidden; }}
+    .block-container {{ padding: 2.5rem 3rem 4rem; max-width: 1200px; }}
 
-    .stApp { background: #0a0b0e; }
-
-    /* ── Hide default Streamlit chrome ── */
-    #MainMenu, footer, header { visibility: hidden; }
-    .block-container { padding: 2.5rem 3rem 4rem; max-width: 1200px; }
-
-    /* ── Hero header ── */
-    .hero {
-        display: flex;
-        align-items: center;
-        gap: 1.2rem;
+    .hero {{
+        display: flex; align-items: center; gap: 1.2rem;
         padding: 2.8rem 0 1.6rem;
-        border-bottom: 1px solid #1e2130;
+        border-bottom: 1px solid {t['border']};
         margin-bottom: 2.4rem;
-    }
-    .hero-icon {
-        font-size: 2.8rem;
-        filter: drop-shadow(0 0 14px #3b82f680);
-    }
-    .hero-title {
-        font-family: 'Syne', sans-serif;
-        font-size: 2.4rem;
-        font-weight: 800;
-        letter-spacing: -0.03em;
-        color: #f0f2f7;
-        margin: 0;
-        line-height: 1;
-    }
-    .hero-title span { color: #3b82f6; }
-    .hero-sub {
-        font-size: 0.72rem;
-        color: #555c72;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        margin-top: 0.35rem;
-    }
+    }}
+    .hero-icon {{ font-size: 2.8rem; filter: drop-shadow(0 0 14px {t['accent_glow']}); }}
+    .hero-title {{
+        font-family: 'Syne', sans-serif; font-size: 2.4rem; font-weight: 800;
+        letter-spacing: -0.03em; color: {t['title_color']}; margin: 0; line-height: 1;
+    }}
+    .hero-title span {{ color: {t['accent']}; }}
+    .hero-sub {{
+        font-size: 0.72rem; color: {t['text3']}; letter-spacing: 0.14em;
+        text-transform: uppercase; margin-top: 0.35rem;
+    }}
 
-    /* ── Textarea ── */
-    .stTextArea textarea {
-        background: #0f1117 !important;
-        border: 1px solid #1e2130 !important;
+    .stTextArea textarea {{
+        background: {t['bg3']} !important;
+        border: 1px solid {t['border']} !important;
         border-radius: 6px !important;
-        color: #c9cdd6 !important;
+        color: {t['text']} !important;
         font-family: 'IBM Plex Mono', monospace !important;
         font-size: 0.82rem !important;
         padding: 0.9rem 1rem !important;
         resize: vertical;
         transition: border-color 0.2s;
-    }
-    .stTextArea textarea:focus {
-        border-color: #3b82f6 !important;
-        box-shadow: 0 0 0 3px #3b82f620 !important;
-    }
-    label[data-testid="stWidgetLabel"] {
+    }}
+    .stTextArea textarea:focus {{
+        border-color: {t['accent']} !important;
+        box-shadow: 0 0 0 3px {t['accent_soft']} !important;
+    }}
+    label[data-testid="stWidgetLabel"] {{
         font-family: 'IBM Plex Mono', monospace;
-        font-size: 0.72rem;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: #555c72 !important;
+        font-size: 0.72rem; letter-spacing: 0.12em;
+        text-transform: uppercase; color: {t['text3']} !important;
         margin-bottom: 0.4rem;
-    }
+    }}
 
-    /* ── Buttons ── */
-    .stButton > button {
-        background: #3b82f6 !important;
-        color: #fff !important;
-        border: none !important;
-        border-radius: 5px !important;
+    .stButton > button {{
+        background: {t['accent']} !important; color: #fff !important;
+        border: none !important; border-radius: 5px !important;
         font-family: 'IBM Plex Mono', monospace !important;
-        font-size: 0.78rem !important;
-        font-weight: 600 !important;
-        letter-spacing: 0.1em !important;
-        text-transform: uppercase !important;
+        font-size: 0.78rem !important; font-weight: 600 !important;
+        letter-spacing: 0.1em !important; text-transform: uppercase !important;
         padding: 0.55rem 1.6rem !important;
         transition: background 0.2s, box-shadow 0.2s !important;
-    }
-    .stButton > button:hover {
-        background: #2563eb !important;
-        box-shadow: 0 0 18px #3b82f640 !important;
-    }
+    }}
+    .stButton > button:hover {{
+        background: {t['accent2']} !important;
+        box-shadow: 0 0 18px {t['accent_soft']} !important;
+    }}
 
-    /* ── Download button ── */
-    .stDownloadButton > button {
+    .stDownloadButton > button {{
         background: transparent !important;
-        border: 1px solid #3b82f660 !important;
-        color: #3b82f6 !important;
-        border-radius: 5px !important;
+        border: 1px solid {t['accent_dim']} !important;
+        color: {t['accent']} !important; border-radius: 5px !important;
         font-family: 'IBM Plex Mono', monospace !important;
-        font-size: 0.74rem !important;
-        font-weight: 500 !important;
-        letter-spacing: 0.1em !important;
-        text-transform: uppercase !important;
-        padding: 0.5rem 1.4rem !important;
-        transition: all 0.2s !important;
-    }
-    .stDownloadButton > button:hover {
-        background: #3b82f610 !important;
-        border-color: #3b82f6 !important;
-    }
+        font-size: 0.74rem !important; font-weight: 500 !important;
+        letter-spacing: 0.1em !important; text-transform: uppercase !important;
+        padding: 0.5rem 1.4rem !important; transition: all 0.2s !important;
+    }}
+    .stDownloadButton > button:hover {{
+        background: {t['accent_bg']} !important;
+        border-color: {t['accent']} !important;
+    }}
 
-    /* ── URL card header ── */
-    .url-header {
-        display: flex;
-        align-items: center;
-        gap: 0.7rem;
-        padding: 1rem 1.3rem;
-        background: #0f1117;
-        border: 1px solid #1e2130;
-        border-bottom: none;
+    .url-header {{
+        display: flex; align-items: center; gap: 0.7rem;
+        padding: 1rem 1.3rem; background: {t['bg3']};
+        border: 1px solid {t['border']}; border-bottom: none;
         border-radius: 8px 8px 0 0;
-        font-size: 0.78rem;
-        color: #6b7280;
-        margin-top: 2.2rem;
-    }
-    .url-header .dot {
-        width: 8px; height: 8px;
-        border-radius: 50%;
-        background: #3b82f6;
-        box-shadow: 0 0 8px #3b82f6;
-    }
-    .url-header .url-text { color: #94a3b8; font-weight: 500; }
+        font-size: 0.78rem; color: {t['text3']}; margin-top: 2.2rem;
+    }}
+    .url-header .dot {{
+        width: 8px; height: 8px; border-radius: 50%;
+        background: {t['accent']}; box-shadow: 0 0 8px {t['accent']};
+    }}
+    .url-header .url-text {{ color: {t['text2']}; font-weight: 500; }}
 
-    /* ── Result card ── */
-    .result-card {
-        background: #0d0f16;
-        border: 1px solid #1e2130;
-        border-radius: 0 0 8px 8px;
-        padding: 1.6rem 1.8rem;
-        margin-bottom: 0.5rem;
-    }
+    .result-card {{
+        background: {t['bg2']}; border: 1px solid {t['border']};
+        border-radius: 0 0 8px 8px; padding: 1.6rem 1.8rem; margin-bottom: 0.5rem;
+    }}
+    .metric-row {{
+        display: grid; grid-template-columns: repeat(2, 1fr);
+        gap: 1rem; margin-bottom: 1.4rem;
+    }}
+    .metric-box {{
+        background: {t['bg']}; border: 1px solid {t['border']};
+        border-radius: 6px; padding: 1rem 1.2rem;
+    }}
+    .metric-label {{
+        font-size: 0.62rem; letter-spacing: 0.15em; text-transform: uppercase;
+        color: {t['text4']}; margin-bottom: 0.4rem;
+    }}
+    .metric-value {{
+        font-family: 'Syne', sans-serif; font-size: 1.05rem; font-weight: 700;
+        color: {t['title_color']}; line-height: 1.3; word-break: break-word;
+    }}
+    .metric-badge {{
+        display: inline-block; font-size: 0.62rem;
+        font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+        letter-spacing: 0.1em; padding: 0.18rem 0.55rem;
+        border-radius: 3px; margin-left: 0.5rem; vertical-align: middle;
+    }}
+    .badge-good {{ background: #14532d30; color: #4ade80; border: 1px solid #4ade8040; }}
+    .badge-warn {{ background: #7c280030; color: #f97316; border: 1px solid #f9731640; }}
 
-    /* ── Metric row ── */
-    .metric-row {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1rem;
-        margin-bottom: 1.4rem;
-    }
-    .metric-box {
-        background: #0a0b0e;
-        border: 1px solid #1e2130;
-        border-radius: 6px;
-        padding: 1rem 1.2rem;
-    }
-    .metric-label {
-        font-size: 0.62rem;
-        letter-spacing: 0.15em;
-        text-transform: uppercase;
-        color: #404655;
-        margin-bottom: 0.4rem;
-    }
-    .metric-value {
-        font-family: 'Syne', sans-serif;
-        font-size: 1.05rem;
-        font-weight: 700;
-        color: #e2e8f0;
-        line-height: 1.3;
-        word-break: break-word;
-    }
-    .metric-badge {
-        display: inline-block;
-        font-size: 0.62rem;
-        font-family: 'IBM Plex Mono', monospace;
-        font-weight: 600;
-        letter-spacing: 0.1em;
-        padding: 0.18rem 0.55rem;
-        border-radius: 3px;
-        margin-left: 0.5rem;
-        vertical-align: middle;
-    }
-    .badge-good { background: #14532d30; color: #4ade80; border: 1px solid #4ade8040; }
-    .badge-warn { background: #7c280030; color: #f97316; border: 1px solid #f9731640; }
+    .inner-section-label {{
+        font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase;
+        color: {t['text5']}; font-weight: 600;
+        margin: 1.2rem 0 0.5rem; padding-bottom: 0.4rem;
+        border-bottom: 1px solid {t['border3']};
+    }}
+    .tag-container {{
+        background: {t['bg4']}; border: 1px solid {t['border2']};
+        border-radius: 6px; padding: 0.2rem 1rem 0.5rem; margin-bottom: 0.8rem;
+    }}
+    .tag-row {{
+        display: flex; align-items: flex-start; gap: 0.75rem;
+        padding: 0.45rem 0; border-bottom: 1px solid {t['border3']};
+    }}
+    .tag-row:last-child {{ border-bottom: none; }}
+    .tag-num {{
+        min-width: 22px; font-size: 0.6rem; color: {t['num_color2']};
+        font-weight: 600; padding-top: 0.05rem; text-align: right;
+    }}
+    .tag-text {{
+        font-size: 0.78rem; color: {t['title_color']};
+        line-height: 1.5; word-break: break-word;
+    }}
+    .tag-text.h1-text {{ color: {t['h1_color']}; }}
+    .tag-text.h2-text {{ color: {t['h2_color']}; }}
 
-    /* ── Tag section ── */
-    .tag-section { margin-top: 1.2rem; }
-    .tag-section-label {
-        font-size: 0.62rem;
-        letter-spacing: 0.15em;
-        text-transform: uppercase;
-        color: #404655;
-        margin-bottom: 0.6rem;
-    }
-    .tag-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.4rem;
-    }
-    .tag-item {
-        background: #0f1117;
-        border: 1px solid #1e2130;
-        border-radius: 4px;
-        font-size: 0.73rem;
-        color: #94a3b8;
-        padding: 0.28rem 0.65rem;
-        line-height: 1.4;
-    }
-    .tag-item.h1 { border-left: 3px solid #3b82f6; }
-    .tag-item.h2 { border-left: 3px solid #6366f1; }
-
-    /* ── Numbered tag row ── */
-    .tag-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.75rem;
-        padding: 0.45rem 0;
-        border-bottom: 1px solid #1a1d27;
-    }
-    .tag-row:last-child { border-bottom: none; }
-    .tag-num {
-        min-width: 22px;
-        font-size: 0.6rem;
-        color: #2e3450;
-        font-weight: 600;
-        padding-top: 0.05rem;
-        text-align: right;
-    }
-    .tag-text {
-        font-size: 0.78rem;
-        color: #e2e8f0;
-        line-height: 1.5;
-        word-break: break-word;
-    }
-    .tag-text.h1-text { color: #bfdbfe; }
-    .tag-text.h2-text { color: #c7d2fe; }
-
-    /* ── Section header inside card ── */
-    .inner-section-label {
-        font-size: 0.6rem;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: #4a5270;
-        font-weight: 600;
-        margin: 1.2rem 0 0.5rem;
-        padding-bottom: 0.4rem;
-        border-bottom: 1px solid #1a1d27;
-    }
-    .tag-container {
-        background: #111420;
-        border: 1px solid #252a3d;
-        border-radius: 6px;
-        padding: 0.2rem 1rem 0.5rem;
-        margin-bottom: 0.8rem;
-    }
-    .tag-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.75rem;
-        padding: 0.45rem 0;
-        border-bottom: 1px solid #1e2235;
-    }
-    .tag-row:last-child { border-bottom: none; }
-    .tag-num {
-        min-width: 22px;
-        font-size: 0.6rem;
-        color: #3d4560;
-        font-weight: 600;
-        padding-top: 0.05rem;
-        text-align: right;
-    }
-
-    /* ── Error card ── */
-    .error-card {
-        background: #1a0a0a;
-        border: 1px solid #7f1d1d50;
+    .error-card {{
+        background: #1a0a0a; border: 1px solid #7f1d1d50;
         border-left: 3px solid #ef4444;
-        border-radius: 0 0 8px 8px;
-        padding: 1.2rem 1.5rem;
-        font-size: 0.78rem;
-        color: #fca5a5;
-    }
-    .error-card .err-label {
-        font-size: 0.62rem;
-        letter-spacing: 0.15em;
-        text-transform: uppercase;
-        color: #ef444480;
-        margin-bottom: 0.3rem;
-    }
+        border-radius: 0 0 8px 8px; padding: 1.2rem 1.5rem;
+        font-size: 0.78rem; color: #fca5a5;
+    }}
+    .error-card .err-label {{
+        font-size: 0.62rem; letter-spacing: 0.15em; text-transform: uppercase;
+        color: #ef444480; margin-bottom: 0.3rem;
+    }}
 
-    /* ── Divider ── */
-    hr { border-color: #1e2130 !important; margin: 1.5rem 0 !important; }
+    hr {{ border-color: {t['border']} !important; margin: 1.5rem 0 !important; }}
+    .stSpinner > div {{ border-top-color: {t['accent']} !important; }}
+    .stDataFrame {{ border-radius: 6px; overflow: hidden; }}
+    [data-testid="stDataFrameResizable"] {{
+        border: 1px solid {t['border']} !important; border-radius: 6px !important;
+    }}
 
-    /* ── Spinner ── */
-    .stSpinner > div { border-top-color: #3b82f6 !important; }
+    .summary-bar {{
+        display: flex; gap: 1.2rem; padding: 1rem 1.4rem;
+        background: {t['bg2']}; border: 1px solid {t['border']};
+        border-radius: 7px; margin: 2rem 0 1.2rem; flex-wrap: wrap;
+    }}
+    .summary-item {{ font-size: 0.72rem; color: {t['text3']}; }}
+    .summary-item strong {{ color: {t['text2']}; font-weight: 600; }}
 
-    /* ── Dataframe ── */
-    .stDataFrame { border-radius: 6px; overflow: hidden; }
-    [data-testid="stDataFrameResizable"] {
-        border: 1px solid #1e2130 !important;
-        border-radius: 6px !important;
-    }
+    .stProgress > div > div {{ background: {t['accent']} !important; }}
 
-    /* ── Summary banner ── */
-    .summary-bar {
-        display: flex;
-        gap: 1.2rem;
-        padding: 1rem 1.4rem;
-        background: #0d0f16;
-        border: 1px solid #1e2130;
-        border-radius: 7px;
-        margin: 2rem 0 1.2rem;
-        flex-wrap: wrap;
-    }
-    .summary-item { font-size: 0.72rem; color: #555c72; }
-    .summary-item strong { color: #94a3b8; font-weight: 600; }
+    .scorecard-row {{
+        display: flex; align-items: center; gap: 1rem;
+        padding: 0.75rem 1.2rem; background: {t['bg2']};
+        border: 1px solid {t['border']}; border-radius: 6px;
+        margin-bottom: 0.5rem; flex-wrap: wrap;
+    }}
+    .scorecard-row.error-row {{ border-left: 3px solid #ef4444; }}
+    .sc-url {{ font-size: 0.72rem; color: {t['text3']}; flex: 1; min-width: 180px; word-break: break-all; }}
+    .sc-score {{ font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 800; min-width: 36px; text-align: center; }}
+    .sc-chips {{ display: flex; flex-wrap: wrap; gap: 0.35rem; }}
+    .sc-chip {{
+        font-size: 0.62rem; font-family: 'IBM Plex Mono', monospace;
+        font-weight: 600; letter-spacing: 0.08em;
+        padding: 0.2rem 0.6rem; border-radius: 3px;
+    }}
+    .chip-ok   {{ background: #14532d30; color: #4ade80; border: 1px solid #4ade8040; }}
+    .chip-warn {{ background: #7c280030; color: #fb923c; border: 1px solid #fb923c40; }}
+    .chip-fail {{ background: #450a0a30; color: #f87171; border: 1px solid #f8717140; }}
 
-    /* ── Progress bar fix ── */
-    .stProgress > div > div { background: #3b82f6 !important; }
-
-    /* ── Scorecard ── */
-    .scorecard-row {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 0.75rem 1.2rem;
-        background: #0d0f16;
-        border: 1px solid #1e2130;
-        border-radius: 6px;
-        margin-bottom: 0.5rem;
-        flex-wrap: wrap;
-    }
-    .scorecard-row.error-row { border-left: 3px solid #ef4444; }
-    .sc-url {
-        font-size: 0.72rem;
-        color: #64748b;
-        flex: 1;
-        min-width: 180px;
-        word-break: break-all;
-    }
-    .sc-score {
-        font-family: 'Syne', sans-serif;
-        font-size: 1.1rem;
-        font-weight: 800;
-        min-width: 36px;
-        text-align: center;
-    }
-    .sc-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-    .sc-chip {
-        font-size: 0.62rem;
-        font-family: 'IBM Plex Mono', monospace;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        padding: 0.2rem 0.6rem;
-        border-radius: 3px;
-    }
-    .chip-ok   { background: #14532d30; color: #4ade80; border: 1px solid #4ade8040; }
-    .chip-warn { background: #7c280030; color: #fb923c; border: 1px solid #fb923c40; }
-    .chip-fail { background: #450a0a30; color: #f87171; border: 1px solid #f8717140; }
+    [data-testid="stSidebar"] {{
+        background: {t['bg2']} !important;
+        border-right: 1px solid {t['border']} !important;
+    }}
+    [data-testid="stSidebar"] label {{
+        color: {t['text']} !important;
+        font-family: 'IBM Plex Mono', monospace !important;
+        font-size: 0.8rem !important;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -379,7 +280,7 @@ st.markdown(
 
 # ── Hero ──────────────────────────────────────────────────────────────────────
 st.markdown(
-    """
+    f"""
     <div class="hero">
         <div class="hero-icon">🔍</div>
         <div>
@@ -403,7 +304,7 @@ with col_btn:
     run = st.button("⚡  Scan URLs")
 with col_tip:
     st.markdown(
-        "<div style='font-size:0.68rem;color:#404655;padding-top:0.55rem;'>"
+        f"<div style='font-size:0.68rem;color:{t['text4']};padding-top:0.55rem;'>"
         "Separate multiple URLs with spaces or newlines"
         "</div>",
         unsafe_allow_html=True,
@@ -412,11 +313,22 @@ with col_tip:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def get_meta_data(url):
     try:
-        response = requests.get(
-            url.strip(),
-            timeout=10,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
+        }
+        session = requests.Session()
+        session.headers.update(headers)
+        response = session.get(url.strip(), timeout=15)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, "lxml")
 
@@ -429,8 +341,8 @@ def get_meta_data(url):
         description = description or "No description found"
         desc_len = len(description)
 
-        h1_texts = [t.get_text(strip=True) for t in soup.find_all("h1")] or ["No H1 tags found"]
-        h2_texts = [t.get_text(strip=True) for t in soup.find_all("h2")] or ["No H2 tags found"]
+        h1_texts = [x.get_text(strip=True) for x in soup.find_all("h1")] or ["No H1 tags found"]
+        h2_texts = [x.get_text(strip=True) for x in soup.find_all("h2")] or ["No H2 tags found"]
 
         return title, title_len, description, desc_len, h1_texts, h2_texts, None
     except requests.exceptions.RequestException as e:
@@ -444,7 +356,6 @@ def badge(length, limit):
 
 
 def render_tag_list(items, css_class):
-    """Render a numbered list of tags using safe escaped HTML."""
     rows = ""
     for idx, item in enumerate(items, 1):
         safe = html_lib.escape(item)
@@ -465,7 +376,6 @@ if run and url_input.strip():
     for i, url in enumerate(urls):
         progress.progress(i / len(urls), text=f"Scanning {i+1}/{len(urls)}…")
 
-        # ── URL card header ──
         safe_url = html_lib.escape(url)
         st.markdown(
             f"""
@@ -497,9 +407,7 @@ if run and url_input.strip():
                 "Meta Description": "", "Description Length": "",
                 "H1 Tags": "", "H2 Tags": "", "Error": error,
             })
-
         else:
-            # ── 1. Meta title + description (2-col grid) ──
             safe_title = html_lib.escape(title)
             safe_desc  = html_lib.escape(description)
             st.markdown(
@@ -520,7 +428,6 @@ if run and url_input.strip():
                 unsafe_allow_html=True,
             )
 
-            # ── 2. H1 tags ──
             h1_count = len(h1_texts)
             st.markdown(
                 f"""
@@ -534,7 +441,6 @@ if run and url_input.strip():
                 unsafe_allow_html=True,
             )
 
-            # ── 3. H2 tags ──
             h2_count = len(h2_texts)
             st.markdown(
                 f"""
@@ -561,7 +467,6 @@ if run and url_input.strip():
 
     progress.progress(1.0, text="Done ✓")
 
-    # ── Summary + download ────────────────────────────────────────────────────
     if all_rows:
         ok   = sum(1 for r in all_rows if not r["Error"])
         fail = len(all_rows) - ok
@@ -579,7 +484,6 @@ if run and url_input.strip():
 
         df = pd.DataFrame(all_rows)
         st.dataframe(df, use_container_width=True, hide_index=True)
-
         st.markdown("<div style='height:0.6rem'></div>", unsafe_allow_html=True)
         st.download_button(
             label="↓  Export CSV",
@@ -588,27 +492,25 @@ if run and url_input.strip():
             mime="text/csv",
         )
 
-        # ── SEO Scorecard ─────────────────────────────────────────────────────
         st.markdown(
-            """
+            f"""
             <div style="margin-top:2.8rem; margin-bottom:1rem;">
                 <div style="font-family:'Syne',sans-serif; font-size:1.15rem; font-weight:700;
-                            color:#f0f2f7; letter-spacing:-0.01em;">SEO Scorecard</div>
+                            color:{t['title_color']}; letter-spacing:-0.01em;">SEO Scorecard</div>
                 <div style="font-size:0.63rem; letter-spacing:0.14em; text-transform:uppercase;
-                            color:#404655; margin-top:0.25rem;">Per-URL audit · 4 checks</div>
+                            color:{t['text4']}; margin-top:0.25rem;">Per-URL audit · 4 checks</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        # legend
         st.markdown(
-            """
+            f"""
             <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
-                <span class="sc-chip chip-ok" style="font-size:0.63rem;">✓ Pass</span>
+                <span class="sc-chip chip-ok"  style="font-size:0.63rem;">✓ Pass</span>
                 <span class="sc-chip chip-warn" style="font-size:0.63rem;">⚠ Too long</span>
                 <span class="sc-chip chip-fail" style="font-size:0.63rem;">✗ Missing / Error</span>
-                <span style="font-size:0.63rem;color:#404655;align-self:center;">
+                <span style="font-size:0.63rem;color:{t['text4']};align-self:center;">
                     Title ≤60ch &nbsp;·&nbsp; Desc ≤160ch &nbsp;·&nbsp; Exactly 1 H1 &nbsp;·&nbsp; H2s present
                 </span>
             </div>
