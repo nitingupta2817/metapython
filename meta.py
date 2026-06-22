@@ -453,6 +453,71 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ── Floating Scroll Buttons ───────────────────────────────────────────────────
+# ── Floating Scroll Buttons ───────────────────────────────────────────────────
+components.html("""
+<script>
+(function() {
+    var doc = window.parent.document;
+    var old = doc.getElementById('metascan-fabs');
+    if (old) old.remove();
+    var oldStyle = doc.getElementById('metascan-fab-style');
+    if (oldStyle) oldStyle.remove();
+
+    var style = doc.createElement('style');
+    style.id = 'metascan-fab-style';
+    style.textContent = '.mscan-wrap{position:fixed;bottom:2rem;right:1.5rem;display:flex;flex-direction:column;gap:0.5rem;z-index:99999;}.mscan-btn{width:44px;height:44px;border-radius:50%;background:#3b82f6;color:#fff;border:none;font-size:1.3rem;cursor:pointer;box-shadow:0 4px 18px rgba(59,130,246,0.5);transition:transform 0.2s;}.mscan-btn:hover{transform:scale(1.1);}';
+    doc.head.appendChild(style);
+
+    function getScroller() {
+        var candidates = [
+            doc.querySelector('[data-testid="stAppViewBlockContainer"]'),
+            doc.querySelector('[data-testid="stAppViewContainer"]'),
+            doc.querySelector('[data-testid="block-container"]'),
+            doc.querySelector('.main > div'),
+            doc.querySelector('.main'),
+            doc.querySelector('section.main'),
+            doc.documentElement,
+            doc.body
+        ];
+        for (var i = 0; i < candidates.length; i++) {
+            var el = candidates[i];
+            if (!el) continue;
+            if (el.scrollHeight > el.clientHeight) {
+                return el;
+            }
+        }
+        return doc.documentElement;
+    }
+
+    var wrap = doc.createElement('div');
+    wrap.id = 'metascan-fabs';
+    wrap.className = 'mscan-wrap';
+
+    var up = doc.createElement('button');
+    up.className = 'mscan-btn';
+    up.textContent = '↑';
+    up.onclick = function() {
+        getScroller().scrollTo({top: 0, behavior: 'smooth'});
+    };
+
+    var dn = doc.createElement('button');
+    dn.className = 'mscan-btn';
+    dn.textContent = '↓';
+    dn.onclick = function() {
+        var s = getScroller();
+        s.scrollTo({top: s.scrollHeight, behavior: 'smooth'});
+    };
+
+    wrap.appendChild(up);
+    wrap.appendChild(dn);
+    doc.body.appendChild(wrap);
+})();
+</script>
+""", height=0)
+
+# ── Hero + Theme switcher ─────────────────────────────────────────────────────
+
 # ── Hero + Theme switcher ─────────────────────────────────────────────────────
 THEME_ACCENTS = {
     "Obsidian": "#3b82f6",
@@ -687,96 +752,392 @@ def render_meta_card(title, tlen, desc, dlen):
     )
 
 
-# ── Filter definitions (4 only) ───────────────────────────────────────────────
-# key, label, active pill class, description
-FILTERS = [
-    ("all",      "All URLs",           "pill-active-all",     "Every scanned URL"),
-    ("perfect",  "✓ Perfect",          "pill-active-perfect", "All checks pass"),
-    ("title",    "⚠ Meta Title",       "pill-active-title",   "Title missing or > 60 chars"),
-    ("desc",     "⚠ Meta Desc",        "pill-active-desc",    "Description missing or > 160 chars"),
-    ("no_h1",    "✗ No H1",            "pill-active-heading", "Missing H1 tag"),
-    ("multi_h1", "⚠ Multi H1",         "pill-active-heading", "Multiple H1 tags found"),
-    ("no_h2",    "✗ No H2",            "pill-active-heading", "No H2 tags found"),
-    ("noindex",  "🚫 Noindex",         "pill-active-title",   "Page blocked from Google"),
-    ("nofollow", "⚠ Nofollow",         "pill-active-desc",    "Links not passing authority"),
-    ("canonical","⚠ Canonical",        "pill-active-desc",    "Canonical URL differs from page URL"),
-    ("no_og",    "⚠ No OG Tags",       "pill-active-title",   "Missing Open Graph tags"),
-    ("img_alt",  "⚠ Images No Alt",    "pill-active-heading", "Images missing alt text"),
-    ("error",    "✗ Errors",           "pill-active-heading", "Fetch / connection errors"),
+# ── URL Scanner Scorecard Categories ───────────────────────────────────────────
+# The scanner now groups every URL into Pass, Warning, or Failed.
+# Existing scan logic stays the same; only the scorecard filter experience is changed.
+
+SCANNER_FILTERS = [
+    ("all",     "All URLs",   "Every scanned URL"),
+    ("pass",    "✓ Pass",     "Pages where all checked SEO items passed"),
+    ("warning", "⚠ Warning",  "Pages with non-critical SEO concerns"),
+    ("failed",  "✗ Failed",   "Pages with critical SEO failures"),
 ]
 
 
-def get_tags(row):
-    """Return set of issue tags for a row. Handles both scanner and crawler row formats."""
-    tags = set()
+def _safe_int(value, default=0):
+    try:
+        if value in (None, "", "—"):
+            return default
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def scanner_issue_details(row):
+    """
+    Build scanner evidence for each URL.
+    Each check is classified as Pass, Warning, or Failed so every page falls under the three groups.
+    """
+    details = []
+
+    url = row.get("URL", "")
 
     # ── Fetch error ────────────────────────────────────────────────────────────
+    if row.get("Error", ""):
+        details.append({
+            "Status": "Failed",
+            "Check": "Fetch / Connection",
+            "Problem": "Page could not be scanned",
+            "Concern": row.get("Error", ""),
+            "Current Value": row.get("Error", ""),
+            "Recommended Action": "Check whether the URL is live, blocked, redirected, or protected by bot security.",
+            "Page URL": url,
+        })
+        return details
+
+    # ── Parse common values ────────────────────────────────────────────────────
+    title_val = row.get("Meta Title", "") or ""
+    desc_val = row.get("Meta Description", "") or ""
+    tlen = _safe_int(row.get("Title Length", 0))
+    dlen = _safe_int(row.get("Description Length", 0))
+
+    h1_raw = row.get("H1 Tags", "") or ""
+    h2_raw = row.get("H2 Tags", "") or ""
+    h1s = [x for x in str(h1_raw).split(" | ") if x.strip()]
+    h2s = [x for x in str(h2_raw).split(" | ") if x.strip()]
+
+    noindex = str(row.get("Noindex", "")).lower() in ("yes", "true", "1")
+    nofollow = str(row.get("Nofollow", "")).lower() in ("yes", "true", "1")
+    canonical_mismatch = str(row.get("Canonical Mismatch", "")).lower() in ("yes", "true", "1")
+
+    og_title = row.get("OG Title", "") or ""
+    og_desc = row.get("OG Description", "") or ""
+
+    img_total = _safe_int(row.get("Images Total", 0))
+    img_no_alt = _safe_int(row.get("Images No Alt", 0))
+
+    title_missing = not title_val or title_val in ("No title found", "—", "")
+    desc_missing = not desc_val or desc_val in ("No description found", "—", "")
+
+    # ── Meta title ─────────────────────────────────────────────────────────────
+    if title_missing:
+        details.append({
+            "Status": "Failed",
+            "Check": "Meta Title",
+            "Problem": "Missing meta title",
+            "Concern": "Search engines and users may not get a clear page title.",
+            "Current Value": "MISSING",
+            "Recommended Action": "Add a unique meta title under 60 characters.",
+            "Page URL": url,
+        })
+    elif tlen > 60:
+        details.append({
+            "Status": "Warning",
+            "Check": "Meta Title",
+            "Problem": "Meta title is too long",
+            "Concern": "The title may be truncated in search results.",
+            "Current Value": title_val,
+            "Length": tlen,
+            "Recommended Action": "Trim the title to around 50–60 characters.",
+            "Page URL": url,
+        })
+    else:
+        details.append({
+            "Status": "Pass",
+            "Check": "Meta Title",
+            "Problem": "Passed",
+            "Concern": "Title exists and is within the recommended length.",
+            "Current Value": title_val,
+            "Length": tlen,
+            "Recommended Action": "No action needed.",
+            "Page URL": url,
+        })
+
+    # ── Meta description ───────────────────────────────────────────────────────
+    if desc_missing:
+        details.append({
+            "Status": "Failed",
+            "Check": "Meta Description",
+            "Problem": "Missing meta description",
+            "Concern": "Search snippets may be auto-generated and less controlled.",
+            "Current Value": "MISSING",
+            "Recommended Action": "Add a clear 120–160 character meta description.",
+            "Page URL": url,
+        })
+    elif dlen > 160:
+        details.append({
+            "Status": "Warning",
+            "Check": "Meta Description",
+            "Problem": "Meta description is too long",
+            "Concern": "The description may be truncated in search results.",
+            "Current Value": desc_val,
+            "Length": dlen,
+            "Recommended Action": "Shorten the description to 140–160 characters.",
+            "Page URL": url,
+        })
+    else:
+        details.append({
+            "Status": "Pass",
+            "Check": "Meta Description",
+            "Problem": "Passed",
+            "Concern": "Description exists and is within the recommended length.",
+            "Current Value": desc_val,
+            "Length": dlen,
+            "Recommended Action": "No action needed.",
+            "Page URL": url,
+        })
+
+    # ── H1 ─────────────────────────────────────────────────────────────────────
+    if len(h1s) == 0:
+        details.append({
+            "Status": "Failed",
+            "Check": "H1",
+            "Problem": "Missing H1 tag",
+            "Concern": "The page lacks a clear primary heading.",
+            "Current Value": "MISSING",
+            "Recommended Action": "Add exactly one clear H1 heading.",
+            "Page URL": url,
+        })
+    elif len(h1s) > 1:
+        details.append({
+            "Status": "Warning",
+            "Check": "H1",
+            "Problem": "Multiple H1 tags",
+            "Concern": "Multiple primary headings can confuse page structure.",
+            "Current Value": " | ".join(h1s),
+            "H1 Count": len(h1s),
+            "Recommended Action": "Keep one main H1 and convert others to H2/H3 if needed.",
+            "Page URL": url,
+        })
+    else:
+        details.append({
+            "Status": "Pass",
+            "Check": "H1",
+            "Problem": "Passed",
+            "Concern": "Exactly one H1 was found.",
+            "Current Value": h1s[0],
+            "H1 Count": 1,
+            "Recommended Action": "No action needed.",
+            "Page URL": url,
+        })
+
+    # ── H2 ─────────────────────────────────────────────────────────────────────
+    if len(h2s) == 0:
+        details.append({
+            "Status": "Warning",
+            "Check": "H2",
+            "Problem": "No H2 tags found",
+            "Concern": "The page may lack structured subheadings.",
+            "Current Value": "MISSING",
+            "Recommended Action": "Add H2 subheadings where useful for content structure.",
+            "Page URL": url,
+        })
+    else:
+        details.append({
+            "Status": "Pass",
+            "Check": "H2",
+            "Problem": "Passed",
+            "Concern": "H2 subheadings were found.",
+            "Current Value": " | ".join(h2s[:5]) + (" …" if len(h2s) > 5 else ""),
+            "H2 Count": len(h2s),
+            "Recommended Action": "No action needed.",
+            "Page URL": url,
+        })
+
+    # ── Indexability ───────────────────────────────────────────────────────────
+    if noindex:
+        details.append({
+            "Status": "Failed",
+            "Check": "Indexability",
+            "Problem": "Page has noindex",
+            "Concern": "This page is blocked from appearing in Google search results.",
+            "Current Value": row.get("Robots Meta", "") or row.get("X-Robots", "") or "noindex",
+            "Recommended Action": "Remove noindex only if this page should rank in Google.",
+            "Page URL": url,
+        })
+    else:
+        details.append({
+            "Status": "Pass",
+            "Check": "Indexability",
+            "Problem": "Passed",
+            "Concern": "No noindex directive was found.",
+            "Current Value": row.get("Robots Meta", "") or "not set",
+            "Recommended Action": "No action needed.",
+            "Page URL": url,
+        })
+
+    # ── Nofollow ───────────────────────────────────────────────────────────────
+    if nofollow:
+        details.append({
+            "Status": "Warning",
+            "Check": "Nofollow",
+            "Problem": "Page has nofollow",
+            "Concern": "Links on this page may not pass authority.",
+            "Current Value": row.get("Robots Meta", "") or row.get("X-Robots", "") or "nofollow",
+            "Recommended Action": "Remove nofollow if links on this page should pass authority.",
+            "Page URL": url,
+        })
+    else:
+        details.append({
+            "Status": "Pass",
+            "Check": "Nofollow",
+            "Problem": "Passed",
+            "Concern": "No nofollow directive was found.",
+            "Current Value": row.get("Robots Meta", "") or "not set",
+            "Recommended Action": "No action needed.",
+            "Page URL": url,
+        })
+
+    # ── Canonical ──────────────────────────────────────────────────────────────
+    if canonical_mismatch:
+        details.append({
+            "Status": "Warning",
+            "Check": "Canonical",
+            "Problem": "Canonical URL differs from scanned URL",
+            "Concern": "Google may consolidate ranking signals to another URL.",
+            "Current Value": row.get("Canonical", "") or "—",
+            "Recommended Action": "Confirm this canonical is intentional. If not, set it to the current page URL.",
+            "Page URL": url,
+        })
+    else:
+        details.append({
+            "Status": "Pass",
+            "Check": "Canonical",
+            "Problem": "Passed",
+            "Concern": "No canonical mismatch was detected.",
+            "Current Value": row.get("Canonical", "") or "—",
+            "Recommended Action": "No action needed.",
+            "Page URL": url,
+        })
+
+    # ── Open Graph ─────────────────────────────────────────────────────────────
+    if not og_title or og_title == "—" or not og_desc or og_desc == "—":
+        details.append({
+            "Status": "Warning",
+            "Check": "Open Graph",
+            "Problem": "Missing OG title or OG description",
+            "Concern": "Social media previews may look incomplete.",
+            "Current Value": f"OG Title: {og_title or 'MISSING'} | OG Description: {og_desc or 'MISSING'}",
+            "Recommended Action": "Add og:title and og:description.",
+            "Page URL": url,
+        })
+    else:
+        details.append({
+            "Status": "Pass",
+            "Check": "Open Graph",
+            "Problem": "Passed",
+            "Concern": "Open Graph title and description were found.",
+            "Current Value": f"OG Title: {og_title} | OG Description: {og_desc}",
+            "Recommended Action": "No action needed.",
+            "Page URL": url,
+        })
+
+    # ── Image ALT ──────────────────────────────────────────────────────────────
+    if img_no_alt > 0:
+        details.append({
+            "Status": "Warning",
+            "Check": "Image Alt Text",
+            "Problem": "Images missing alt text",
+            "Concern": "Missing alt text affects accessibility and image SEO.",
+            "Current Value": f"{img_no_alt}/{img_total} images missing alt",
+            "Recommended Action": "Add short, descriptive alt text to the affected images.",
+            "Page URL": url,
+        })
+    else:
+        details.append({
+            "Status": "Pass",
+            "Check": "Image Alt Text",
+            "Problem": "Passed",
+            "Concern": "No missing image alt text was detected.",
+            "Current Value": f"{img_total} images checked",
+            "Recommended Action": "No action needed.",
+            "Page URL": url,
+        })
+
+    return details
+
+
+def scanner_status(row):
+    """Overall URL status for the three scorecard groups."""
+    details = scanner_issue_details(row)
+    statuses = {d["Status"] for d in details}
+
+    if "Failed" in statuses:
+        return "failed"
+    if "Warning" in statuses:
+        return "warning"
+    return "pass"
+
+
+def scanner_rows_for_filter(all_rows, active):
+    if active == "all":
+        return all_rows
+    return [row for row in all_rows if scanner_status(row) == active]
+
+
+def scanner_detail_df(rows, active):
+    detail_rows = []
+
+    for row in rows:
+        for item in scanner_issue_details(row):
+            status_key = item["Status"].lower()
+            if active == "all" or status_key == active:
+                detail_rows.append(item)
+
+    if not detail_rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(detail_rows)
+
+    preferred = [
+        "Status", "Check", "Problem", "Concern", "Current Value",
+        "Length", "Limit", "H1 Count", "H2 Count",
+        "Recommended Action", "Page URL"
+    ]
+    columns = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
+    return df[columns]
+
+
+def get_tags(row):
+    """
+    Keep old issue tags for existing health widgets and summary logic.
+    The new visible scorecard uses scanner_status() and scanner_issue_details().
+    """
+    tags = set()
+
     if row.get("Error", ""):
         tags.add("error")
         return tags
 
-    # ── Title ──────────────────────────────────────────────────────────────────
-    tlen = row.get("Title Length", 0)
-    try:
-        tlen = int(tlen) if tlen not in (None, "", "—") else 0
-    except (ValueError, TypeError):
-        tlen = 0
-    title_val = row.get("Meta Title", "")
-    title_missing = not title_val or title_val in ("No title found", "—", "")
-    if title_missing or tlen == 0:
-        tags.add("title")
-    elif tlen > 60:
-        tags.add("title")
+    for item in scanner_issue_details(row):
+        check = item["Check"]
+        status = item["Status"]
+        problem = item["Problem"]
 
-    # ── Description ────────────────────────────────────────────────────────────
-    dlen = row.get("Description Length", 0)
-    try:
-        dlen = int(dlen) if dlen not in (None, "", "—") else 0
-    except (ValueError, TypeError):
-        dlen = 0
-    desc_val = row.get("Meta Description", "")
-    desc_missing = not desc_val or desc_val in ("No description found", "—", "")
-    if desc_missing or dlen == 0:
-        tags.add("desc")
-    elif dlen > 160:
-        tags.add("desc")
+        if status == "Pass":
+            continue
 
-    # ── Headings ───────────────────────────────────────────────────────────────
-    h1_raw = row.get("H1 Tags", "")
-    h2_raw = row.get("H2 Tags", "")
-    h1s = [x for x in str(h1_raw).split(" | ") if x.strip()] if h1_raw else []
-    h2s = [x for x in str(h2_raw).split(" | ") if x.strip()] if h2_raw else []
-    if len(h1s) == 0:
-        tags.add("no_h1")
-    elif len(h1s) > 1:
-        tags.add("multi_h1")
-    if len(h2s) == 0:
-        tags.add("no_h2")
+        if check == "Meta Title":
+            tags.add("title")
+        elif check == "Meta Description":
+            tags.add("desc")
+        elif check == "H1" and problem == "Missing H1 tag":
+            tags.add("no_h1")
+        elif check == "H1" and problem == "Multiple H1 tags":
+            tags.add("multi_h1")
+        elif check == "H2":
+            tags.add("no_h2")
+        elif check == "Indexability":
+            tags.add("noindex")
+        elif check == "Nofollow":
+            tags.add("nofollow")
+        elif check == "Canonical":
+            tags.add("canonical")
+        elif check == "Open Graph":
+            tags.add("no_og")
+        elif check == "Image Alt Text":
+            tags.add("img_alt")
 
-    # ── Noindex / Nofollow ─────────────────────────────────────────────────────
-    if str(row.get("Noindex", "")).lower() in ("yes", "true", "1"):
-        tags.add("noindex")
-    if str(row.get("Nofollow", "")).lower() in ("yes", "true", "1"):
-        tags.add("nofollow")
-
-    # ── Canonical mismatch ─────────────────────────────────────────────────────
-    if str(row.get("Canonical Mismatch", "")).lower() in ("yes", "true", "1"):
-        tags.add("canonical")
-
-    # ── OG Tags ────────────────────────────────────────────────────────────────
-    og = row.get("OG Title", "")
-    if not og or og in ("—", ""):
-        tags.add("no_og")
-
-    # ── Images missing alt ─────────────────────────────────────────────────────
-    try:
-        img_no_alt = int(row.get("Images No Alt", 0) or 0)
-    except (ValueError, TypeError):
-        img_no_alt = 0
-    if img_no_alt > 0:
-        tags.add("img_alt")
-
-    # ── Perfect ────────────────────────────────────────────────────────────────
     if not tags:
         tags.add("perfect")
 
@@ -789,51 +1150,37 @@ def render_scorecard(all_rows):
         <div class="scorecard-header">
             <div>
                 <div class="scorecard-title">SEO Scorecard</div>
-                <div class="scorecard-sub">Per-URL audit · title · description · headings · indexability · images</div>
+                <div class="scorecard-sub">Per-URL audit grouped into Pass · Warning · Failed</div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Counts per tag
-    tag_counts = {k: 0 for k, *_ in FILTERS}
-    tag_counts["all"] = len(all_rows)
-    row_tags = {}
-    for row in all_rows:
-        tags = get_tags(row)
-        row_tags[row["URL"]] = tags
-        for t in tags:
-            if t in tag_counts:
-                tag_counts[t] += 1
+    status_by_url = {row["URL"]: scanner_status(row) for row in all_rows}
+    counts = {
+        "all": len(all_rows),
+        "pass": sum(1 for v in status_by_url.values() if v == "pass"),
+        "warning": sum(1 for v in status_by_url.values() if v == "warning"),
+        "failed": sum(1 for v in status_by_url.values() if v == "failed"),
+    }
 
-    if "sc_filter" not in st.session_state:
+    if "sc_filter" not in st.session_state or st.session_state.sc_filter not in [k for k, *_ in SCANNER_FILTERS]:
         st.session_state.sc_filter = "all"
 
-    # ── Pill colours per filter key ────────────────────────────────────────────
     PILL_COLORS = {
-        "all":      (T["accent"],  T["accent"] + "22",  T["accent"]),
-        "perfect":  ("#4ade80",    "#14532d",            "#4ade80"),
-        "title":    ("#fbbf24",    "#451a03",            "#fbbf24"),
-        "desc":     ("#fb923c",    "#431407",            "#fb923c"),
-        "no_h1":    ("#f87171",    "#450a0a",            "#f87171"),
-        "multi_h1": ("#fbbf24",    "#451a03",            "#fbbf24"),
-        "no_h2":    ("#f87171",    "#450a0a",            "#f87171"),
-        "noindex":  ("#f87171",    "#450a0a",            "#f87171"),
-        "nofollow": ("#fbbf24",    "#451a03",            "#fbbf24"),
-        "canonical":("#fb923c",    "#431407",            "#fb923c"),
-        "no_og":    ("#fbbf24",    "#451a03",            "#fbbf24"),
-        "img_alt":  ("#fb923c",    "#431407",            "#fb923c"),
-        "error":    ("#ef4444",    "#3d0000",            "#ef4444"),
+        "all":     (T["accent"], T["accent"] + "22", T["accent"]),
+        "pass":    ("#4ade80", "#14532d", "#4ade80"),
+        "warning": ("#fb923c", "#431407", "#fb923c"),
+        "failed":  ("#f87171", "#450a0a", "#f87171"),
     }
+
     active = st.session_state.sc_filter
 
-    # Build all pills as clickable Streamlit-compatible links via query param trick:
-    # Use a hidden selectbox + JS-free approach: render pills, use a selectbox below
     pills_html = '<div class="filter-wrap" style="display:flex;flex-wrap:wrap;gap:0.45rem;padding:0.8rem 0 0.4rem;">'
-    for key, label, _, desc in FILTERS:
-        count     = tag_counts.get(key, 0)
-        is_active = (active == key)
+    for key, label, desc in SCANNER_FILTERS:
+        count = counts.get(key, 0)
+        is_active = active == key
         col, bg, border = PILL_COLORS.get(key, ("#94a3b8", "#1e2130", "#94a3b8"))
 
         if is_active:
@@ -841,55 +1188,40 @@ def render_scorecard(all_rows):
                 f"display:inline-flex;align-items:center;gap:0.35rem;"
                 f"font-family:'DM Mono',monospace;font-size:0.68rem;font-weight:600;"
                 f"letter-spacing:0.05em;padding:0.32rem 0.85rem;border-radius:6px;"
-                f"background:{bg};color:{col};"
-                f"border:1.5px solid {border};"
-                f"box-shadow:0 0 10px {col}44;"
-                f"cursor:default;white-space:nowrap;"
+                f"background:{bg};color:{col};border:1.5px solid {border};"
+                f"box-shadow:0 0 10px {col}44;cursor:default;white-space:nowrap;"
             )
         else:
             pill_style = (
                 f"display:inline-flex;align-items:center;gap:0.35rem;"
                 f"font-family:'DM Mono',monospace;font-size:0.68rem;font-weight:500;"
                 f"letter-spacing:0.05em;padding:0.32rem 0.85rem;border-radius:6px;"
-                f"background:{T['bg2']};color:{T['text2']};"
-                f"border:1px solid {T['border']};"
-                f"cursor:default;white-space:nowrap;"
-                f"transition:all 0.15s;"
+                f"background:{T['bg2']};color:{T['text2']};border:1px solid {T['border']};"
+                f"cursor:default;white-space:nowrap;transition:all 0.15s;"
             )
 
         count_style = (
             f"background:{'rgba(255,255,255,0.15)' if is_active else T['bg3']};"
             f"color:{'#fff' if is_active else T['text3']};"
-            f"font-size:0.58rem;font-weight:700;"
-            f"padding:0.05rem 0.38rem;border-radius:4px;"
+            f"font-size:0.58rem;font-weight:700;padding:0.05rem 0.38rem;border-radius:4px;"
         )
 
         pills_html += (
-            f'<span style="{pill_style}" title="{desc}">'
-            f'{label}'
-            f'<span style="{count_style}">{count}</span>'
-            f'</span>'
+            f'<span style="{pill_style}" title="{html_lib.escape(desc)}">'
+            f'{label}<span style="{count_style}">{count}</span></span>'
         )
     pills_html += "</div>"
     st.markdown(pills_html, unsafe_allow_html=True)
 
-    # Hidden selectbox — the real click target (styled to be invisible above pills)
-    st.markdown(
-        '<div style="margin-top:-0.5rem;margin-bottom:0.2rem;">',
-        unsafe_allow_html=True,
-    )
-    filter_keys   = [k for k, *_ in FILTERS]
-    filter_labels = [f"{l} ({tag_counts.get(k,0)})" for k, l, *_ in FILTERS]
-    sel_idx = filter_keys.index(active) if active in filter_keys else 0
-    chosen  = st.selectbox(
+    filter_keys = [k for k, *_ in SCANNER_FILTERS]
+    chosen = st.selectbox(
         "Filter",
         options=filter_keys,
-        format_func=lambda k: next(l for fk, l, *_ in FILTERS if fk == k),
-        index=sel_idx,
+        format_func=lambda k: next(l for fk, l, *_ in SCANNER_FILTERS if fk == k),
+        index=filter_keys.index(active),
         key="sc_filter_select",
         label_visibility="collapsed",
     )
-    st.markdown("</div>", unsafe_allow_html=True)
 
     if chosen != active:
         st.session_state.sc_filter = chosen
@@ -898,8 +1230,8 @@ def render_scorecard(all_rows):
     active = st.session_state.sc_filter
 
     if active != "all":
-        active_label   = next(label for key, label, *_ in FILTERS if key == active)
-        filtered_count = sum(1 for r in all_rows if active in row_tags.get(r["URL"], set()))
+        active_label = next(label for key, label, *_ in SCANNER_FILTERS if key == active)
+        filtered_count = counts.get(active, 0)
         banner_col, clear_col = st.columns([5, 1])
         with banner_col:
             st.markdown(
@@ -918,7 +1250,8 @@ def render_scorecard(all_rows):
                         <strong style="color:var(--heading);">{len(all_rows)}</strong> URLs
                     </span>
                 </div>
-                """, unsafe_allow_html=True,
+                """,
+                unsafe_allow_html=True,
             )
         with clear_col:
             st.markdown("<div class='clear-filter-btn' style='margin-top:0.5rem;'>", unsafe_allow_html=True)
@@ -927,7 +1260,6 @@ def render_scorecard(all_rows):
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # Legend
     st.markdown(
         """
         <div style="display:flex;gap:0.8rem;margin:0.8rem 0 1rem;flex-wrap:wrap;align-items:center;">
@@ -935,15 +1267,14 @@ def render_scorecard(all_rows):
             <span class="sc-chip chip-warn">⚠ Warning</span>
             <span class="sc-chip chip-fail">✗ Failed</span>
             <span style="font-size:0.6rem;color:var(--text3);">
-                Title ≤60ch · Desc ≤160ch · 1 H1 · H2s · Indexed · Canonical · OG · Alt text
+                Click a group to see pages and exact check-level evidence.
             </span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    filtered = (all_rows if active == "all"
-                else [r for r in all_rows if active in row_tags.get(r["URL"], set())])
+    filtered = scanner_rows_for_filter(all_rows, active)
 
     if not filtered:
         st.markdown(
@@ -952,182 +1283,89 @@ def render_scorecard(all_rows):
         )
         return
 
+    details_df = scanner_detail_df(filtered, active)
+    if not details_df.empty:
+        st.markdown(
+            '<div style="font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text3);margin:0.8rem 0 0.5rem;">Detailed Evidence</div>',
+            unsafe_allow_html=True,
+        )
+        st.dataframe(details_df, use_container_width=True, hide_index=True)
+
+        st.download_button(
+            label=f"↓  Export {active.title()} Details CSV",
+            data=details_df.to_csv(index=False).encode("utf-8"),
+            file_name=f"metascan_url_scanner_{active}_details.csv",
+            mime="text/csv",
+            key=f"download_url_scanner_{active}_details",
+        )
+
+    def chip(text, cls):
+        return f'<span class="sc-chip {cls}">{text}</span>'
+
     for row in filtered:
         safe_url = html_lib.escape(row["URL"])
-        tags     = row_tags.get(row["URL"], get_tags(row))
+        status = scanner_status(row)
+        row_details = scanner_issue_details(row)
 
-        # ── Parse all values ──────────────────────────────────────────────────
-        try: tlen = int(row.get("Title Length",0) or 0)
-        except: tlen = 0
-        try: dlen = int(row.get("Description Length",0) or 0)
-        except: dlen = 0
+        failed_items = [d for d in row_details if d["Status"] == "Failed"]
+        warning_items = [d for d in row_details if d["Status"] == "Warning"]
+        pass_items = [d for d in row_details if d["Status"] == "Pass"]
 
-        title_val   = row.get("Meta Title","") or ""
-        desc_val    = row.get("Meta Description","") or ""
-        h1_raw      = row.get("H1 Tags","") or ""
-        h2_raw      = row.get("H2 Tags","") or ""
-        h1s         = [x for x in str(h1_raw).split(" | ") if x.strip()]
-        h2s         = [x for x in str(h2_raw).split(" | ") if x.strip()]
-        noindex_str = str(row.get("Noindex","")).lower()
-        blocked_str = str(row.get("Blocked","")).lower()
-        nofollow_str= str(row.get("Nofollow","")).lower()
-        can_mismatch= str(row.get("Canonical Mismatch","")).lower()
-        canonical   = row.get("Canonical","") or ""
-        og_title    = row.get("OG Title","") or ""
-        try: img_no_alt = int(row.get("Images No Alt",0) or 0)
-        except: img_no_alt = 0
-        try: img_total = int(row.get("Images Total",0) or 0)
-        except: img_total = 0
-        g_indexed   = row.get("Google Indexed","")
+        if status == "failed":
+            sc_color = "#f87171"
+            score_label = "FAILED"
+            focus_items = failed_items
+            chips = "".join(chip(f"✗ {d['Check']}", "chip-fail") for d in failed_items)
+            chips += "".join(chip(f"⚠ {d['Check']}", "chip-warn") for d in warning_items)
+        elif status == "warning":
+            sc_color = "#fb923c"
+            score_label = "WARNING"
+            focus_items = warning_items
+            chips = "".join(chip(f"⚠ {d['Check']}", "chip-warn") for d in warning_items)
+        else:
+            sc_color = "#4ade80"
+            score_label = "PASS"
+            focus_items = pass_items
+            chips = "".join(chip(f"✓ {d['Check']}", "chip-ok") for d in pass_items)
 
-        no_title  = not title_val or title_val in ("No title found","—","")
-        no_desc   = not desc_val  or desc_val  in ("No description found","—","")
-        is_noindex  = noindex_str  in ("yes","true","1")
-        is_blocked  = blocked_str  in ("yes","true","1")
-        is_nofollow = nofollow_str in ("yes","true","1")
-        is_can_mismatch = can_mismatch in ("yes","true","1")
-        no_og     = not og_title or og_title in ("—","")
+        if not chips:
+            chips = chip("✓ Passed", "chip-ok")
 
-        # ── Score ─────────────────────────────────────────────────────────────
-        WEIGHTS = {"error":10,"title":8,"desc":7,"no_h1":6,"noindex":5,
-                   "multi_h1":4,"no_h2":3,"nofollow":3,"canonical":3,"no_og":2,"img_alt":2}
-        MAX_W = sum(WEIGHTS.values())
-        deducted  = sum(WEIGHTS.get(t,0) for t in tags)
-        row_score = max(0, round(100 - (deducted / MAX_W) * 100))
-        sc_color  = "#4ade80" if row_score >= 80 else "#fb923c" if row_score >= 50 else "#f87171"
-
-        # ── Build detail line — changes based on active filter ─────────────────
-        def chip(text, cls):
-            return f'<span class="sc-chip {cls}">{text}</span>'
-
-        if row.get("Error",""):
-            # Error row — always the same
-            err_msg = html_lib.escape(str(row.get("Error",""))[:100])
-            st.markdown(f"""
-            <div class="scorecard-row error-row">
-              <div>
-                <div class="sc-url">{safe_url}</div>
-                <div style="font-size:0.65rem;color:#f87171;margin-top:0.25rem;">✗ {err_msg}</div>
-              </div>
-              <div class="sc-score" style="color:#f87171;">–</div>
-              <div class="sc-chips">{chip("✗ Error","chip-fail")}</div>
-            </div>""", unsafe_allow_html=True)
-            continue
-
-        # ── Detail block shown below URL — context-aware ───────────────────────
-        if active == "all" or active == "perfect":
-            # Summary chips for all fields
-            chips = ""
-            chips += chip(f"✗ No Title","chip-fail")        if no_title          else chip(f"✓ Title {tlen}ch","chip-warn" if tlen>60 else "chip-ok")
-            chips += chip(f"✗ No Desc","chip-fail")         if no_desc           else chip(f"✓ Desc {dlen}ch","chip-warn" if dlen>160 else "chip-ok")
-            chips += chip(f"✗ No H1","chip-fail")           if len(h1s)==0       else chip(f"⚠ {len(h1s)} H1s","chip-warn") if len(h1s)>1 else chip("✓ 1 H1","chip-ok")
-            chips += chip(f"✗ No H2","chip-fail")           if not h2s           else chip(f"✓ {len(h2s)} H2s","chip-ok")
-            chips += chip("🚫 Noindex","chip-fail")          if is_noindex        else chip("⚠ Index?","chip-warn") if is_blocked else chip("✓ Indexed","chip-ok")
-            detail = chips
-            detail_extra = ""
-
-        elif active == "title":
-            if no_title:
-                detail = chip("✗ No Meta Title found","chip-fail")
-                detail_extra = ""
-            else:
-                bar_w = min(100, round(tlen/60*100))
-                bar_c = "#fbbf24" if tlen > 60 else "#4ade80"
-                status = chip(f"⚠ {tlen}/60 chars — too long","chip-warn") if tlen>60 else chip(f"✓ {tlen}/60 chars — good","chip-ok")
-                detail = status
-                detail_extra = (
-                    f'<div style="font-size:0.66rem;color:var(--text2);margin:0.3rem 0 0.25rem;">'
-                    f'{html_lib.escape(title_val[:120])}{"…" if len(title_val)>120 else ""}</div>'
-                    f'<div style="height:5px;background:var(--border);border-radius:3px;margin-top:0.2rem;">'
-                    f'<div style="height:100%;width:{bar_w}%;background:{bar_c};border-radius:3px;'
-                    f'box-shadow:0 0 6px {bar_c}88;"></div></div>'
-                    f'<div style="font-size:0.52rem;color:var(--text3);margin-top:0.15rem;">Limit: 60 characters</div>'
-                )
-
-        elif active == "desc":
-            if no_desc:
-                detail = chip("✗ No Meta Description found","chip-fail")
-                detail_extra = ""
-            else:
-                bar_w = min(100, round(dlen/160*100))
-                bar_c = "#fbbf24" if dlen > 160 else "#4ade80"
-                status = chip(f"⚠ {dlen}/160 chars — too long","chip-warn") if dlen>160 else chip(f"✓ {dlen}/160 chars — good","chip-ok")
-                detail = status
-                detail_extra = (
-                    f'<div style="font-size:0.66rem;color:var(--text2);margin:0.3rem 0 0.25rem;">'
-                    f'{html_lib.escape(desc_val[:160])}{"…" if len(desc_val)>160 else ""}</div>'
-                    f'<div style="height:5px;background:var(--border);border-radius:3px;margin-top:0.2rem;">'
-                    f'<div style="height:100%;width:{bar_w}%;background:{bar_c};border-radius:3px;'
-                    f'box-shadow:0 0 6px {bar_c}88;"></div></div>'
-                    f'<div style="font-size:0.52rem;color:var(--text3);margin-top:0.15rem;">Limit: 160 characters</div>'
-                )
-
-        elif active == "no_h1":
-            detail = chip("✗ No H1 tag found","chip-fail")
-            detail_extra = '<div style="font-size:0.62rem;color:var(--text3);margin-top:0.2rem;">Every page needs exactly one H1 heading.</div>'
-
-        elif active == "multi_h1":
-            detail = chip(f"⚠ {len(h1s)} H1 tags found — should be exactly 1","chip-warn")
-            detail_extra = (
-                f'<div style="font-size:0.64rem;color:var(--text2);margin-top:0.2rem;">'
-                + " · ".join(html_lib.escape(h[:60]) for h in h1s[:5])
-                + ("…" if len(h1s) > 5 else "") + "</div>"
+        evidence_lines = ""
+        for item in focus_items[:4]:
+            evidence_lines += (
+                f'<div style="font-size:0.62rem;color:var(--text3);margin-top:0.2rem;">'
+                f'<span style="color:{sc_color};font-weight:700;">{html_lib.escape(item["Check"])}</span>'
+                f' · {html_lib.escape(str(item["Problem"]))}'
+                f' · <span style="color:var(--text2);">{html_lib.escape(str(item.get("Concern", ""))[:150])}</span>'
+                f'</div>'
             )
 
-        elif active == "no_h2":
-            detail = chip("✗ No H2 tags found","chip-fail")
-            detail_extra = '<div style="font-size:0.62rem;color:var(--text3);margin-top:0.2rem;">Add H2 subheadings to structure your content.</div>'
+        if len(focus_items) > 4:
+            evidence_lines += (
+                f'<div style="font-size:0.58rem;color:var(--text4);margin-top:0.2rem;">'
+                f'+ {len(focus_items) - 4} more checks in the detailed evidence table above.</div>'
+            )
 
-        elif active == "noindex":
-            if is_noindex:
-                detail = chip("🚫 Noindex — blocked from Google","chip-fail")
-                robots_content = row.get("Robots Meta","") or ""
-                detail_extra = f'<div style="font-size:0.62rem;color:var(--text3);margin-top:0.2rem;">Robots meta: <span style="color:var(--text2);">{html_lib.escape(robots_content) or "not set"}</span></div>'
-            else:
-                gval = g_indexed
-                g_chip = chip("✅ In Google Index","chip-ok") if gval=="Yes" else chip("❌ Not in Google Index","chip-fail") if gval=="No" else chip("⚠ Index unknown","chip-warn")
-                detail = g_chip
-                detail_extra = '<div style="font-size:0.62rem;color:var(--text3);margin-top:0.2rem;">No noindex tag found. Checked via Google site: search.</div>'
-
-        elif active == "nofollow":
-            detail = chip("⚠ Nofollow — links won't pass authority","chip-warn")
-            detail_extra = '<div style="font-size:0.62rem;color:var(--text3);margin-top:0.2rem;">Links on this page will not pass PageRank to other pages.</div>'
-
-        elif active == "canonical":
-            detail = chip("⚠ Canonical mismatch","chip-warn")
-            detail_extra = f'<div style="font-size:0.62rem;color:var(--text2);margin-top:0.2rem;">Points to: {html_lib.escape(canonical[:100])}</div>'
-
-        elif active == "no_og":
-            detail = chip("⚠ No OG Title set","chip-warn")
-            detail_extra = '<div style="font-size:0.62rem;color:var(--text3);margin-top:0.2rem;">Add og:title and og:description for better social sharing previews.</div>'
-
-        elif active == "img_alt":
-            detail = chip(f"⚠ {img_no_alt}/{img_total} images missing alt text","chip-warn")
-            detail_extra = '<div style="font-size:0.62rem;color:var(--text3);margin-top:0.2rem;">Images without alt text hurt accessibility and image SEO.</div>'
-
-        elif active == "error":
-            detail = chip("✗ Fetch Error","chip-fail")
-            detail_extra = ""
-
-        else:
-            detail = ""
-            detail_extra = ""
-
-        st.markdown(f"""
-        <div class="scorecard-row" style="display:block;padding:0.85rem 1.1rem;">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:0.8rem;">
-            <div class="sc-url" style="flex:1;">{safe_url}</div>
-            <div style="display:flex;align-items:center;gap:0.6rem;flex-shrink:0;">
-              <div style="text-align:center;">
-                <div class="sc-score" style="color:{sc_color};font-size:1.3rem;">{row_score}</div>
-                <div style="font-size:0.48rem;color:var(--text4);">SCORE</div>
+        st.markdown(
+            f"""
+            <div class="scorecard-row" style="display:block;padding:0.85rem 1.1rem;border-left:3px solid {sc_color};">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:0.8rem;">
+                <div class="sc-url" style="flex:1;">{safe_url}</div>
+                <div style="display:flex;align-items:center;gap:0.6rem;flex-shrink:0;">
+                  <div style="text-align:center;">
+                    <div class="sc-score" style="color:{sc_color};font-size:1rem;font-family:'DM Mono',monospace;">{score_label}</div>
+                    <div style="font-size:0.48rem;color:var(--text4);">STATUS</div>
+                  </div>
+                </div>
               </div>
+              <div style="margin-top:0.4rem;display:flex;flex-wrap:wrap;gap:0.3rem;">{chips}</div>
+              {evidence_lines}
             </div>
-          </div>
-          <div style="margin-top:0.4rem;display:flex;flex-wrap:wrap;gap:0.3rem;">{detail}</div>
-          {detail_extra if detail_extra else ""}
-        </div>
-        """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True,
+        )
+
 
 
 # ── Scan ──────────────────────────────────────────────────────────────────────
@@ -1362,7 +1600,7 @@ def compute_health(all_rows):
         "nofollow":   3,   # nofollow — minor
         "canonical":  3,   # canonical mismatch — minor
         "no_og":      2,   # no OG tags — minor
-        "img_alt":    2,   # images missing alt — minor
+        "img_alt":    12,  # images missing alt — accessibility + image SEO issue
     }
     MAX_PER_URL = sum(WEIGHTS.values())   # 53 pts max per URL
 
@@ -2138,10 +2376,11 @@ def scrape_page(url: str, session: requests.Session) -> dict:
     result = {
         "url": url, "status": None, "title": "", "title_len": None,
         "description": "", "desc_len": None,
-        "h1_count": 0, "h1_first": "", "h2_count": 0,
+        "h1_count": 0, "h1_first": "", "h1_all": [], "h2_count": 0, "h2_all": [],
         "canonical": "", "robots_meta": "", "noindex": False,
         "og_title": "", "og_description": "", "word_count": 0,
         "links_count": 0, "images_count": 0, "images_no_alt": 0,
+        "all_images": [], "missing_alt_images": [],
         "error": "", "blocked": False, "js_rendered": False, "links": [],
     }
     headers = {
@@ -2220,10 +2459,18 @@ def scrape_page(url: str, session: requests.Session) -> dict:
         h2s = [h.get_text(strip=True) for h in soup.find_all("h2") if h.get_text(strip=True)]
         result["h1_count"] = len(h1s)
         result["h1_first"] = h1s[0][:100] if h1s else ""
+        result["h1_all"]   = h1s
         result["h2_count"] = len(h2s)
+        result["h2_all"]   = h2s
         # Canonical
         can = soup.find("link", rel=lambda v: v and "canonical" in v)
-        result["canonical"] = can.get("href", "").strip() if can else ""
+        canonical_raw = can.get("href", "").strip() if can else ""
+
+        # Ignore invalid canonical placeholders to avoid false https://domain/undefined issues.
+        if canonical_raw.lower() in ("undefined", "null", "none", "#"):
+            canonical_raw = ""
+
+        result["canonical"] = urljoin(url, canonical_raw) if canonical_raw else ""
         # Robots meta
         rm = soup.find("meta", attrs={"name": re.compile(r"robots", re.I)})
         robots_content = rm.get("content", "").lower().strip() if rm else ""
@@ -2243,8 +2490,44 @@ def scrape_page(url: str, session: requests.Session) -> dict:
         result["links_count"]   = len(all_links)
         result["links"]         = all_links
         imgs = soup.find_all("img")
-        result["images_count"]  = len(imgs)
-        result["images_no_alt"] = sum(1 for i in imgs if not i.get("alt", "").strip())
+        all_images = []
+        missing_alt_images = []
+
+        for idx_img, img in enumerate(imgs, 1):
+            src = img.get("src", "").strip()
+            if src and not src.startswith("http"):
+                src = urljoin(url, src)
+
+            alt = img.get("alt", "").strip()
+            width = img.get("width", "") or "—"
+            height = img.get("height", "") or "—"
+
+            img_record = {
+                "Page URL": url,
+                "Image No.": idx_img,
+                "Image URL": src or "(no src)",
+                "Alt Text": alt or "MISSING",
+                "Has Alt": "Yes" if alt else "No",
+                "Width": width,
+                "Height": height,
+            }
+            all_images.append(img_record)
+
+            if not alt:
+                missing_alt_images.append({
+                    "Page URL": url,
+                    "Image No.": idx_img,
+                    "Image URL": src or "(no src)",
+                    "Current Alt": "MISSING",
+                    "Width": width,
+                    "Height": height,
+                    "Recommended Fix": "Add a short, descriptive alt attribute for this image.",
+                })
+
+        result["images_count"] = len(all_images)
+        result["images_no_alt"] = len(missing_alt_images)
+        result["all_images"] = all_images
+        result["missing_alt_images"] = missing_alt_images
         # If JS shell with no meta at all, add informative note
         if result["js_rendered"] and not title and not desc and not h1s:
             result["error"] = (
@@ -2286,7 +2569,21 @@ def analyse_page(page: dict) -> dict:
         issues.append("non_canonical")
     if page["images_no_alt"] > 0: issues.append("img_no_alt")
 
-    score = max(0, 100 - len([i for i in issues if i not in ("noindex","non_canonical","img_no_alt")]) * 20)
+    ISSUE_WEIGHTS = {
+        "fetch_error": 100,
+        "no_title": 25,
+        "no_desc": 22,
+        "no_h1": 20,
+        "title_long": 10,
+        "desc_long": 10,
+        "multi_h1": 10,
+        "img_no_alt": 18,
+        "no_h2": 8,
+        "noindex": 12,
+        "non_canonical": 8,
+    }
+    deducted = sum(ISSUE_WEIGHTS.get(i, 5) for i in issues)
+    score = max(0, 100 - deducted)
     return {**page, "issues": issues, "score": score}
 
 
@@ -2375,15 +2672,196 @@ def crawl_site(root_url, max_pages, max_depth, delay_ms, same_domain_only, ignor
 
 # ── Results Renderer ──────────────────────────────────────────────────────────
 
+
+
+def build_crawl_issue_detail_rows(results, issue_key):
+    """Return rows for the clickable crawler issue breakdown."""
+    rows = []
+
+    for r in results:
+        if issue_key not in r.get("issues", []):
+            continue
+
+        page_url = r.get("url", "—")
+        severity = crawler_issue_severity(issue_key)
+
+        if issue_key == "img_no_alt":
+            rows.extend(r.get("missing_alt_images", []))
+
+        elif issue_key == "fetch_error":
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "HTTP Status": r.get("status") or "—",
+                "Problem": "Fetch error",
+                "Error": r.get("error") or "—",
+                "Recommended Fix": "Check if the page is live, blocked, redirected, or protected by bot security.",
+            })
+
+        elif issue_key == "no_title":
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "Problem": "Missing meta title",
+                "Current Title": "MISSING",
+                "Recommended Fix": "Add a unique meta title under 60 characters.",
+            })
+
+        elif issue_key == "title_long":
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "Problem": "Meta title too long",
+                "Current Title": r.get("title") or "—",
+                "Length": r.get("title_len") or 0,
+                "Limit": 60,
+                "Recommended Fix": "Trim the title to around 50–60 characters.",
+            })
+
+        elif issue_key == "no_desc":
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "Problem": "Missing meta description",
+                "Current Description": "MISSING",
+                "Recommended Fix": "Add a clear 120–160 character page summary.",
+            })
+
+        elif issue_key == "desc_long":
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "Problem": "Meta description too long",
+                "Current Description": r.get("description") or "—",
+                "Length": r.get("desc_len") or 0,
+                "Limit": 160,
+                "Recommended Fix": "Shorten the description to avoid search-result truncation.",
+            })
+
+        elif issue_key == "no_h1":
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "Problem": "Missing H1 tag",
+                "Current H1": "MISSING",
+                "Recommended Fix": "Add exactly one clear H1 heading on the page.",
+            })
+
+        elif issue_key == "multi_h1":
+            h1s = r.get("h1_all", [])
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "Problem": "Multiple H1 tags",
+                "H1 Count": r.get("h1_count", 0),
+                "H1 Tags": " | ".join(h1s) if h1s else r.get("h1_first", "—"),
+                "Recommended Fix": "Keep one main H1 and convert other H1s to H2/H3.",
+            })
+
+        elif issue_key == "no_h2":
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "Problem": "No H2 tags found",
+                "H2 Count": r.get("h2_count", 0),
+                "Recommended Fix": "Add H2 subheadings to structure the page content.",
+            })
+
+        elif issue_key == "noindex":
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "Problem": "Page has noindex",
+                "Robots Meta": r.get("robots_meta") or "—",
+                "Recommended Fix": "Remove noindex only if this page should appear in Google.",
+            })
+
+        elif issue_key == "non_canonical":
+            rows.append({
+                "Page URL": page_url,
+                "Severity": severity,
+                "Problem": "Canonical URL differs from crawled URL",
+                "Canonical URL": r.get("canonical") or "—",
+                "Recommended Fix": "Confirm this canonical is intentional. If not, set canonical to the page URL.",
+            })
+
+    return rows
+
+
+def build_all_crawl_issue_details(results, issue_labels):
+    """Flatten all issue details into one exportable table."""
+    rows = []
+
+    for issue_key, label_data in issue_labels.items():
+        label = label_data[0]
+        detail_rows = build_crawl_issue_detail_rows(results, issue_key)
+
+        for row in detail_rows:
+            final_row = {"Issue": label, "Issue Key": issue_key, "Severity": crawler_issue_severity(issue_key)}
+            final_row.update(row)
+            rows.append(final_row)
+
+    return pd.DataFrame(rows)
+
+
+
+CRAWLER_HIGH_ISSUES = {"fetch_error", "no_title", "no_desc", "no_h1", "noindex"}
+CRAWLER_MINOR_ISSUES = {"title_long", "desc_long", "multi_h1", "no_h2", "img_no_alt", "non_canonical"}
+
+
+def crawler_issue_severity(issue_key):
+    return "High" if issue_key in CRAWLER_HIGH_ISSUES else "Minor"
+
+
+def crawler_issue_severity_counts(results):
+    high_pages = 0
+    minor_pages = 0
+    issue_pages = 0
+    high_total = 0
+    minor_total = 0
+
+    for r in results:
+        issues = r.get("issues", [])
+        if not issues:
+            continue
+
+        issue_pages += 1
+        has_high = any(crawler_issue_severity(i) == "High" for i in issues)
+        has_minor = any(crawler_issue_severity(i) == "Minor" for i in issues)
+
+        if has_high:
+            high_pages += 1
+        elif has_minor:
+            minor_pages += 1
+
+        for issue in issues:
+            if crawler_issue_severity(issue) == "High":
+                high_total += 1
+            else:
+                minor_total += 1
+
+    return {
+        "issue_pages": issue_pages,
+        "high_pages": high_pages,
+        "minor_pages": minor_pages,
+        "high_total": high_total,
+        "minor_total": minor_total,
+    }
+
+
 def render_crawl_results(results: list):
     if not results:
         st.warning("No pages were crawled.")
         return
 
     total       = len(results)
-    ok          = sum(1 for r in results if not r["error"])
-    errors      = total - ok
-    perfect     = sum(1 for r in results if r["score"] == 100 and not r["error"])
+    fetch_errors = sum(1 for r in results if r.get("error"))
+    ok          = total - fetch_errors
+    severity_counts = crawler_issue_severity_counts(results)
+    high_issue_pages = severity_counts["high_pages"]
+    minor_issue_pages = severity_counts["minor_pages"]
+    issue_pages = severity_counts["issue_pages"]
+    perfect     = sum(1 for r in results if not r.get("issues"))
     avg_score   = round(sum(r["score"] for r in results) / total) if total else 0
 
     # ── Convert crawl results → scanner row format for snow leopard ───────────
@@ -2395,8 +2873,14 @@ def render_crawl_results(results: list):
             "Title Length":       r["title_len"]   if r["title_len"] is not None else 0,
             "Meta Description":   r["description"] or "No description found",
             "Description Length": r["desc_len"]    if r["desc_len"] is not None else 0,
-            "H1 Tags":            r["h1_first"]    or "",
-            "H2 Tags":            " | ".join(["h2"] * r["h2_count"]) if r["h2_count"] else "",
+            "H1 Tags":            " | ".join(r.get("h1_all", [])) or r["h1_first"] or "",
+            "H2 Tags":            " | ".join(r.get("h2_all", [])) if r.get("h2_all") else (" | ".join(["h2"] * r["h2_count"]) if r["h2_count"] else ""),
+            "Noindex":            "Yes" if r.get("noindex") else "No",
+            "Canonical":          r.get("canonical") or "—",
+            "Canonical Mismatch": "Yes" if r.get("canonical") and r.get("canonical", "").rstrip("/") != r.get("url", "").rstrip("/") else "No",
+            "OG Title":           r.get("og_title") or "—",
+            "Images Total":       r.get("images_count", 0),
+            "Images No Alt":      r.get("images_no_alt", 0),
             "Error":              r["error"]        or "",
         }
 
@@ -2423,8 +2907,12 @@ def render_crawl_results(results: list):
             <div style="font-family:'Bebas Neue',sans-serif;font-size:2rem;color:#4ade80;line-height:1.1;margin-top:0.2rem;">{ok}</div>
           </div>
           <div style="flex:1;padding:1rem 1.2rem;border-right:1px solid var(--border);">
-            <div style="font-size:0.52rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text3);">Errors</div>
-            <div style="font-family:'Bebas Neue',sans-serif;font-size:2rem;color:#f87171;line-height:1.1;margin-top:0.2rem;">{errors}</div>
+            <div style="font-size:0.52rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text3);">High Issues</div>
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:2rem;color:#f87171;line-height:1.1;margin-top:0.2rem;">{high_issue_pages}</div>
+          </div>
+          <div style="flex:1;padding:1rem 1.2rem;border-right:1px solid var(--border);">
+            <div style="font-size:0.52rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text3);">Minor Issues</div>
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:2rem;color:#fbbf24;line-height:1.1;margin-top:0.2rem;">{minor_issue_pages}</div>
           </div>
           <div style="flex:1;padding:1rem 1.2rem;border-right:1px solid var(--border);">
             <div style="font-size:0.52rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text3);">Perfect</div>
@@ -2439,7 +2927,18 @@ def render_crawl_results(results: list):
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Issue breakdown ───────────────────────────────────────────────────────
+        st.markdown(
+        """
+        <div style="font-size:0.62rem;color:var(--text3);margin:0.4rem 0 1rem;">
+            <strong style="color:var(--heading);">High Issues</strong> = critical SEO problems.
+            <strong style="color:var(--heading);">Minor Issues</strong> = improvement items.
+            <strong style="color:var(--heading);">Perfect</strong> = pages with no detected issues.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Issue breakdown ───────────────────────────────────────────────────────
         issue_counts = {}
         for r in results:
             for issue in r.get("issues", []):
@@ -2463,21 +2962,33 @@ def render_crawl_results(results: list):
             st.markdown(f"""
             <div style="font-family:'Bebas Neue',sans-serif;font-size:1.3rem;letter-spacing:0.06em;
                         color:var(--heading);margin:1.8rem 0 0.8rem;">Issue Breakdown</div>
+            <div style="font-size:0.62rem;color:var(--text3);margin:-0.4rem 0 0.9rem;">
+                Click any issue below to see affected page URLs and the exact relevant details.
+            </div>
             """, unsafe_allow_html=True)
 
-            cols = st.columns(4)
-            for idx, (issue_key, count) in enumerate(
-                sorted(issue_counts.items(), key=lambda x: -x[1])
-            ):
+            all_issue_details_df = build_all_crawl_issue_details(results, ISSUE_LABELS)
+            if not all_issue_details_df.empty:
+                st.download_button(
+                    label="↓  Export All Issue Details CSV",
+                    data=all_issue_details_df.to_csv(index=False).encode("utf-8"),
+                    file_name="metascan_all_issue_details.csv",
+                    mime="text/csv",
+                    key="download_all_crawl_issue_details",
+                )
+
+            for issue_key, count in sorted(issue_counts.items(), key=lambda x: -x[1]):
                 label, color = ISSUE_LABELS.get(issue_key, (issue_key, "#94a3b8"))
                 pct = round(count / total * 100)
-                with cols[idx % 4]:
+                severity = crawler_issue_severity(issue_key)
+
+                with st.expander(f"{severity} · {label} · {count} page(s) · {pct}%"):
                     st.markdown(f"""
                     <div style="background:var(--bg2);border:1px solid var(--border);
                                 border-left:3px solid {color};border-radius:8px;
-                                padding:0.9rem 1rem;margin-bottom:0.6rem;">
+                                padding:0.9rem 1rem;margin-bottom:0.7rem;">
                       <div style="font-size:0.58rem;color:{color};font-weight:700;
-                                  letter-spacing:0.1em;margin-bottom:0.3rem;">{label}</div>
+                                  letter-spacing:0.1em;margin-bottom:0.3rem;">{severity} · {label}</div>
                       <div style="font-family:'Bebas Neue',sans-serif;font-size:1.8rem;
                                   color:var(--heading);line-height:1;">{count}</div>
                       <div style="font-size:0.55rem;color:var(--text3);margin-top:0.15rem;">
@@ -2488,6 +2999,21 @@ def render_crawl_results(results: list):
                       </div>
                     </div>
                     """, unsafe_allow_html=True)
+
+                    detail_rows = build_crawl_issue_detail_rows(results, issue_key)
+                    if detail_rows:
+                        detail_df = pd.DataFrame(detail_rows)
+                        st.dataframe(detail_df, use_container_width=True, hide_index=True)
+
+                        st.download_button(
+                            label=f"↓  Export {label} Details CSV",
+                            data=detail_df.to_csv(index=False).encode("utf-8"),
+                            file_name=f"metascan_{issue_key}_details.csv",
+                            mime="text/csv",
+                            key=f"download_crawl_issue_{issue_key}",
+                        )
+                    else:
+                        st.info("No detailed records available for this issue.")
 
         # ── Filter tabs ───────────────────────────────────────────────────────────
         st.markdown(f"""
